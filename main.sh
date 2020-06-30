@@ -189,7 +189,7 @@ function pedirDatos() {
 					
 					printf "\e[91mINTRODUCE UN NÚMERO SUPERIOR A 0\e[39m\r" #te muestra en pantalla el texto y vuelve a la linea anterior
 				done
-		printf "%*s\n" "$(tput cols)" " "
+				printf "%*s\n" "$(tput cols)" " "
 			fi
 
 			if [[ -z $proc_pagina_tamano ]]; then
@@ -637,7 +637,7 @@ function leerArchivo() {
 			else log 0 'Es comentario' '@'; fi
 		fi
 	done
-	mem_tamano= ${dir_tot} / $proc_pagina_tamano;
+	mem_tamano= ${dir_tot}/$proc_pagina_tamano;
 	set +f; unset IFS
 	if [[ ! $i -eq 0 ]]; then
 		proc_count=$i
@@ -717,22 +717,22 @@ function salidaEjecucion() {
 			estado='FINALIZADO       '
 
 		elif [[ ${proc_estado[i]} -ge 8 ]]; then
-				anteriorProc=$UltimoEjec;
-				procMem[$contMemEjec]=${proc_id_decenas[$i]};
-				procColorMem[$contMemEjec]=${proc_color[i]};
-				UltimoEjec=${proc_id_decenas[$i]};
-				UltimoColorEjec=${proc_color[i]};
-				UltimoColor=${proc_color[i]};
-				estado='EN EJECUCION     '
-				let "contMemEjec=contMemEjec+1"
+			anteriorProc=$UltimoEjec;
+			procMem[$contMemEjec]=${proc_id_decenas[$i]};
+			procColorMem[$contMemEjec]=${proc_color[i]};
+			UltimoEjec=${proc_id_decenas[$i]};
+			UltimoColorEjec=${proc_color[i]};
+			UltimoColor=${proc_color[i]};
+			estado='EN EJECUCION     '
+			let "contMemEjec=contMemEjec+1"
 			
 
 		elif [[ ${proc_estado[i]} -ge 4 ]]; then
-				procMem[$contMemEjec]=${proc_id_decenas[$i]};
-				procColorMem[$contMemEjec]=${proc_color[i]};
+			procMem[$contMemEjec]=${proc_id_decenas[$i]};
+			procColorMem[$contMemEjec]=${proc_color[i]};
 
-				estado='EN MEMORIA       '
-				let "contMemEjec=contMemEjec+1"
+			estado='EN MEMORIA       '
+			let "contMemEjec=contMemEjec+1"
 
 
 		elif [[ ${proc_estado[i]} -ge 2 ]]; then
@@ -1115,10 +1115,9 @@ function salidaEjecucion() {
 		
 		if [[ -n $anteriorTime ]] ;then 
 			let "incremento=tiempo-anteriorTime-2" # le resto dos porque pone dos de más 
-			for (( c=0;c<${incremento}; c++))
-			do
+			for (( c=0;c<${incremento}; c++ ));do
 					
-					let "numPaginas[antNumEjec]=numPaginas[antNumEjec]+1"
+				let "numPaginas[antNumEjec]=numPaginas[antNumEjec]+1"
 
 				let "l=numPaginas[antNumEjec]"
 				dir=`echo "${proc_direcciones[$antNumEjec]}"|cut -d ',' -f $l`
@@ -1222,7 +1221,7 @@ function salidaEjecucion() {
 #		evento_log_NoEsc
 #		mem_proc_id
 #		mem_tamano
-#		mem_tamano_abreviacion
+#		mem_tamano_abreviacions
 #		mem_tamano_redondeado
 #		mem_usada
 #		mem_usada_abreviacion
@@ -1246,10 +1245,11 @@ function step() {
 	local -i i
 	if [[ $tiempo -le $tiempo_final ]]; then poblarSwap; fi
 	if [[ ! ${#swp_proc_id[@]} -eq 0 ]]; then poblarMemoria; fi
+
 	if [[ ${#mem_proc_id[@]} -eq 0 ]]; then
-		if [[ ${#swp_proc_id[@]} -eq 0 ]] && [[ $tiempo -gt $tiempo_final ]]; then finalizarEjecucion 0 ; fi
-		if [[ ${proc_tamano[${swp_proc_index[0]}]} -gt $mem_tamano ]]; then finalizarEjecucion 20 ; fi
-		if [[ $tiempo -ge 0 ]]; then linea_tiempo[$tiempo]=-1; fi
+		if [[ ${#swp_proc_id[@]} -eq 0 ]] && [[ $tiempo -gt $tiempo_final ]]; then finalizarEjecucion 0 ; fi #? si ha terminado
+		if [[ ${proc_tamano[${swp_proc_index[0]}]} -gt $mem_tamano ]]; then finalizarEjecucion 20 ; fi #? si el tamaño del proceso es mayor que la memoria
+		if [[ $tiempo -ge 0 ]]; then linea_tiempo[$tiempo]=-1; fi #? cuando no hay nada en la memria se pone a -1
 	else
 		calcularEjecucion
 	fi
@@ -1304,6 +1304,18 @@ function step() {
 	fi
 
 	((tiempo++))
+
+	############!###########
+	echo " ##### Paso ######"
+	echo ${#proc_id[@]}
+	echo ${proc_estado[@]}
+	echo ${proc_tamano[@]}
+	echo ${mem_proc_id[@]}
+	echo $tiempo
+	echo $tiempo_final
+	echo ${linea_tiempo[@]}
+	read -p "#########"
+	############!###########
 }
 
 #######################################
@@ -1430,10 +1442,12 @@ local -i espacio_valido=1 i j index
 					mem_proc_tamano+=("${proc_tamano[index]}") #guarda tamaño
 					((proc_estado[swp_proc_index[0]]|=4))
 					mem_usada=$((mem_usada + proc_tamano[swp_proc_index[0]])) #y actualiza la memoria usada
+
 					for ((j=0 ; j<proc_tamano[swp_proc_index[0]] ; j++ )); do #por cada tamaño del proceso
 						mem_paginas[$((i + j))]=$index #guarda la index de cada proceso de memoria en el espacio correspondiente
 						mem_paginas_secuencia[$((i + j))]=-1
 					done
+
 					actualizarPosiciones
 					unset swp_proc_id[0] #saca el proceso del swap
 					unset swp_proc_index[0]
@@ -1619,23 +1633,23 @@ function calcularEjecucion() {
 
 	for index in ${mem_proc_index[@]}; do 
 
-	if [[ $priReal = M ]]; then
-		
-		if [[ ${proc_priori[index]} -gt $Mm ]]; then
+		if [[ $priReal = M ]]; then
+			
+			if [[ ${proc_priori[index]} -gt $Mm ]]; then
 
 				min_index=$index
 				Mm=${proc_priori[index]}
+			fi
 		fi
-	fi
 
-	if [[ $priReal = m ]]; then
-		if [[ ${proc_priori[index]} -lt $Mm ]];then
+		if [[ $priReal = m ]]; then
+			if [[ ${proc_priori[index]} -lt $Mm ]];then
 
 				min_index=$index
 				Mm=${proc_priori[index]}
+			fi
 		fi
-	fi
-		((proc_estado[index]&=~8))
+			((proc_estado[index]&=~8))
 
 	done
 		((proc_estado[min_index]|=8))
@@ -1668,7 +1682,7 @@ function ordenarProcesos() {
 	done
 }
 
-#######################################
+#?######################################
 #	Realiza sustitución de páginas
 #	Globales:
 #		mem_paginas_secuencia
@@ -1681,18 +1695,22 @@ function ordenarProcesos() {
 #		Index de proceso
 #	Devuelve:
 #		Nada
-#######################################
+#?######################################
 function actualizarPaginas() {
 	local -ri index=$1
 	local -i fallo i=0 apuntador
 	local -a paginas=()
 	local posicion posicion_previa
+
 	IFS=',' read -r -a paginas <<< "${proc_paginas[index]}"
+
 	local -r objetivo=${paginas[$((proc_tiempo_ejecucion[index]-1))]}
+
 	for posicion in ${proc_posicion[index]}; do
 		if [[ ${mem_paginas_secuencia[posicion]} -eq $objetivo ]]; then fallo=$i; fi
 		((++i))
 	done
+
 	if [[ -z $fallo ]]; then
 		apuntador=${proc_paginas_apuntador[index]}
 		mem_paginas_secuencia[$(( $(echo ${proc_posicion[index]} | cut -d ' ' -f1) + apuntador ))]=$objetivo
@@ -1795,10 +1813,14 @@ function evolucionPaginas() {
 #		Nada
 #######################################
 function actualizarPosiciones() {
+	echo "Actualizando posiciones"
+
 	local -i p i
+	local -a posiciones=()
+	local -i inx=${mem_proc_index[p]}
+
 	for ((p=0; p<${#mem_proc_index[@]}; p++ )) ; do
-		local -a posiciones=()
-		local -i inx=${mem_proc_index[p]}
+		
 		for ((i=0; i<mem_tamano; i++ )); do
 			if [[ ${mem_paginas[i]} -eq $inx ]] && [[ -n ${mem_paginas[i]} ]]; then
 				posiciones+=("$i")
@@ -2158,14 +2180,14 @@ fi
 pedirDatos
 
 for(( k=0;k<=${proc_count};k++)); do
-		sacarPaginas[$k]=0; # indica el numero de paginas que se deben sacar inicialmente
+	sacarPaginas[$k]=0; # indica el numero de paginas que se deben sacar inicialmente
 
 done
 
 for(( k=0;k<=${proc_count};k++)); do
-		numPaginas[$k]=0; # indica el numero de paginas pintadas en la linea de tiempos de cada proceso 
-
+	numPaginas[$k]=0; # indica el numero de paginas pintadas en la linea de tiempos de cada proceso 
 done
+
 salidaDatos
 ordenarProcesos
 
