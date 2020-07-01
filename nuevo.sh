@@ -89,8 +89,8 @@ function pedirProcesos() {
             printf "\e[91mINTRODUCE UN NÚMERO MAYOR O IGUAL QUE 0 \e[39m\r"
         done
         printf "%*s\n" "$(tput cols)" " "
-        
-        printf "\e[1A%80s\r" " "        
+
+        printf "\e[1A%80s\r" " "
         read -p "Introducir otro proceso s/n [s]: " -n1 continuar
         echo
         ((nProceso++))
@@ -145,7 +145,7 @@ function introducirPrioridad() {
     if [[ $# -ne 1 ]]; then
         echo "Numero incorrecto de parametros"
     else
-        if [[ ${#ordenPrioridad[@]} -eq 1 ]]; then
+        if [[ ${#ordenPrioridad[@]} -eq 0 ]]; then
             #para el primer proceso
             ordenPrioridad[0]=$1
         else
@@ -194,6 +194,7 @@ function buscarSegmentosVacios() {
     if [[ $size -gt 0 ]]; then
         segmentosLibres+=([$start]=$size)
     fi
+
 }
 
 #############################
@@ -204,7 +205,9 @@ function buscarSegmentosVacios() {
 function inicializarMemoria() {
     for ((i = 0; i < $numMarcos; i++)); do
         memPrincipal[$i]=-1
+        memPagina[$i]=-1
     done
+
 }
 
 #############################
@@ -217,6 +220,28 @@ function desplazarPrioridad() {
         ordenPrioridad[(($i - 1))]=${ordenPrioridad[$i]}
     done
     unset "ordenPrioridad[((${#ordenPrioridad[@]}-1))]"
+}
+
+function desplazarPaginasRestantes() {
+    #printf "${Rojo} Desplazando ${NC}\n"
+    if [[ $# -ne 1 ]]; then
+        echo "Numero incorrecto de parametros se esperaban 1 [desplazarPaginasRestantes]"
+    else
+        local paginas=${paginasRestantes[$1]}
+        local -a arrPaginas
+
+        IFS=', ' read -r -a arrPaginas <<<"$paginas"
+
+        if [[ ${#arrPaginas[@]} -ne 0 ]]; then
+            for ((i = 1; i < ${#arrPaginas[@]}; i++)); do
+                arrPaginas[(($i - 1))]=${arrPaginas[$i]}
+            done
+
+            unset "arrPaginas[((${#arrPaginas[@]}-1))]"
+
+            join_by , ${arrPaginas[@]}
+        fi
+    fi
 }
 
 #############################
@@ -233,7 +258,47 @@ function reservarMemoria() {
         for ((i = $2; i < (($2 + marcos)); i++)); do
             memPrincipal[$i]=$1
         done
+        tiempoEntrada[$1]=$tiempo
     fi
+}
+
+#############################
+#   libera memoria de un proceso en la banda de memoria y paginas
+#   Input <-- parametros: $1-proceso
+#   Output --> memPrincipal memPagina
+#############################
+function liberarMemoria() {
+    if [[ $# -ne 1 ]]; then
+        echo "Numero incorrecto de parametros se esperaba 1 [liberarMemoria]"
+    else
+        local -i inicio=${procesosMemoria[$1]} marcos=${procTamano[$1]}
+
+        if [[ -z $inicio ]]; then
+            echo "El proceso $1 no esta em memoria"
+        else
+            for ((i = $inicio; i < (($inicio + $marcos)); i++)); do
+                memPrincipal[$i]=-1
+                memPagina[$i]=-1
+            done
+
+            unset procesosMemoria[$1]
+            tiempoSalida[$i]=$tiempo
+        fi
+    fi
+}
+
+#############################
+# Recorre los procesos en memoria, si su cola de marcos esta vacia los expulsa
+#############################
+function vaciarMemoria() {
+
+    for p in ${!paginasRestantes[@]}; do
+        if [[ -z ${paginasRestantes[$p]} ]]; then
+            liberarMemoria $p
+            #! Importante disminuir el numero de procesos
+            ((procesosRestantes--))
+        fi
+    done
 }
 
 #############################
@@ -245,15 +310,17 @@ function reservarMemoria() {
 
 function introducirEnMemoria() {
     # por cada proceso segun prioridad
-    for ((p = 0; p < ${#ordenPrioridad[@]}; p++)); do
-        local -i optimo, exceso
+    local -i procesos=${#ordenPrioridad[@]}
+
+    for ((p = 0; p < $procesos; p++)); do
+        local -i optimo exceso
 
         #Actualizar segmentos vacios
         buscarSegmentosVacios
 
         #? buscar segmento en el que meter el proceso
-        for seg in segmentosLibres; do
-            #buscar mejor hueco
+        for seg in ${!segmentosLibres[@]}; do
+            # buscar mejor hueco
             # Si no hay uno previo se guarda el primero en el que quepa
             if [[ -z $optimo ]] && [[ ${procTamano[$p]} -le ${segmentosLibres[$seg]} ]]; then
                 optimo=$seg
@@ -262,6 +329,8 @@ function introducirEnMemoria() {
             elif [[ -n optimo ]] && [[ ${procTamano[$p]} -le ${segmentosLibres[$seg]} ]] && [[ $((${segmentosLibres[$seg]} - ${procTamano[$p]})) -lt exceso ]]; then
                 optimo=$seg
                 exceso=$((${segmentosLibres[$seg]} - ${procTamano[$p]}))
+            else
+                echo "Proceso $p ${procTamano[$p]} ${segmentosLibres[$seg]} $optimo $exceso"
             fi
         done
 
@@ -271,15 +340,22 @@ function introducirEnMemoria() {
         #? Si se ha conseguido, se desplaza la cola hacia la izquierda y se modifica la memoria
         # ademas se introduce el primer marco si tiene prioridad
         else
+            #? el proceso se guarda en memoria en la  posicion mas optima
             procesosMemoria[$p]=$optimo
+
+            #? se reserva la memoria para el proceso ultimo de la lista SIEMPRE
+            echo "Respservando memoria para el P$p en $optimo"
+            reservarMemoria ${ordenPrioridad[0]} $optimo
+
+            #? se elimina el proceso de la cola
             desplazarPrioridad
-            reservarMemoria $p $optimo
             #se pasan las paginas a la lista de paginas resatantes
-            paginasRestantes[$p]=${dirPaginas[$p]}
+            paginasRestantes[$p]=$(convertirDirecciones ${procDirecciones[$p]})
+
         fi
 
-        optimo=""
-        exceso=""
+        unset optimo
+        unset exceso
     done
 }
 
@@ -315,23 +391,25 @@ function convertirDirecciones() {
 #   Output -->
 #############################
 function introducirPagina() {
-    local -a paginas
+    local -a paginas inicio
 
     if [[ $# -ne 1 ]]; then
         echo "Numero incorrecto de parametros"
     else
         local -i proceso=$1 marco=${procesosMemoria[$1]} vacios
 
-        #se obtienen las paginas
-        IFS=', ' read -r -a paginas <<<"${dirPaginas}"
-
         #se obtienen los marcos vacios
         marcosVacios $1
-        if [[ $? -eq 0 ]]; then
+
+        #si hay marcos vacios en el proceso
+        if [[ $? -gt 0 ]]; then
             #TODO: introduccion simple de marco
-            echo
+            introducirPaginaVacios $1
+            echo "Hay memoria vacia"
+
         else
-            sustituirPagina
+            echo "Sustituyendo paginas"
+            sustituirPagina $1
         fi
     fi
 }
@@ -343,10 +421,12 @@ function introducirPagina() {
 #############################
 
 function marcosVacios() {
+    local -i vacios=0
+
     if [[ $# -ne 1 ]]; then
         echo "Numero incorrecto de parametros"
     else
-        local -i inicio=${procesosMemoria[$1]} vacios=0 marcos=${procTamano[$1]}
+        local -i inicio=${procesosMemoria[$1]} marcos=${procTamano[$1]}
         if [[ -z inicio ]]; then
             echo "${Rojo}!Error, el proceso $1 no esta en memoria${NC}"
         else
@@ -368,7 +448,53 @@ function marcosVacios() {
 #############################
 
 function sustituirPagina() {
-    echo
+    if [[ $# -ne 1 ]]; then
+        echo "${Rojo}Numero incorrecto de parametros${NC}"
+    else
+        local -a enMemoria restantes
+        local -A tiempoPagina #? tiempo que va a tardar la pagina en volver k=pagina v=tiempo
+
+        IFS=', ' read -r -a restantes <<<"${paginasRestantes[$1]}"
+
+        #1 se recogen todas las paginas introducidas en memoria para el proceso
+        local -i inicio=${procesosMemoria[$1]} marcos=${procTamano[$1]}
+        local -i pagina #pagina a comprobar en cada momento
+
+        local -i mayorTiempo=$inicio #posicion de la pagina con mayor tiempo o -1
+
+        # por cada pagina en memoria del proceso $1
+        for ((i = $inicio; i < (($inicio + $marcos)); i++)); do
+            pagina=${memPagina[$i]}
+
+            tiempoPagina[$i]=-1 #? por defectp, si no se encuentra
+            for ((j = 0; j < ${#restantes[@]}; j++)); do
+                if [[ ${restantes[$j]} -eq $pagina ]]; then
+                    #posicion de la pagina = tiempo
+
+                    tiempoPagina[$i]=$j
+                fi
+            done
+        done
+
+        #! si hay un 0 no se produce un fallo de pagina, se corre la lista
+        if [[ ! ${tiempoPagina[@]} =~ 0 ]]; then
+            #se busca el mayor tiempo o un 0
+            for p in ${!tiempoPagina[@]}; do
+                if [[ ${tiempoPagina[$p]} -eq -1 ]]; then
+                    mayorTiempo=$p
+                    break
+                elif [[ ${tiempoPagina[$p]} -gt ${tiempoPagina[$mayorTiempo]} ]]; then
+                    mayorTiempo=$p
+                fi
+            done
+            ((fallosProceso[$1]++))
+            memPagina[$mayorTiempo]=${restantes[0]}
+        fi
+
+        paginasRestantes[$1]=$(desplazarPaginasRestantes $1)
+
+    fi
+
 }
 
 #############################
@@ -376,21 +502,35 @@ function sustituirPagina() {
 #   !IMPORTANTE solo sirve para procesos con marcos libres
 #   Input <-- $1 = proceso
 #   Output --> Modifica memPagina y paginasRestantes
-#   TODO: eliminar de paginas restantes
 #############################
 
-function introducirPagina() {
+function introducirPaginaVacios() {
     if [[ $# -ne 1 ]]; then
         echo "${Rojo}Numero incorrecto de parametros${NC}"
     else
         local -i inicio=${procesosMemoria[$1]} marcos=${procTamano[$1]}
+        local -a paginas
+
+        #se obtienen las paginas
+        IFS=', ' read -r -a paginas <<<"${paginasRestantes[$1]}"
+
         if [[ -z inicio ]]; then
             echo "${Rojo}!Error, el proceso $1 no esta en memoria${NC}"
         else
+
             for ((i = $inicio; i < (($inicio + $marcos)); i++)); do
                 if [[ ${memPagina[$i]} -eq -1 ]]; then
-                    #sacar pagina de la cola
-                    echo "---"
+                    memPagina[$i]=${paginas[0]}
+                    paginasRestantes[$1]=$(desplazarPaginasRestantes $1)
+                    #!solo se puede meter uno por ud de tiempo
+                    i=$(($inicio + $marcos))
+                    #? Se produce un fallo de pagina
+
+                    ((fallosProceso[$1]++))
+                elif [[ ${memPagina[$i]} -eq ${paginas[0]} ]]; then
+                    #? No se produce fallo de pagina
+                    paginasRestantes[$1]=$(desplazarPaginasRestantes $1)
+                    i=$(($inicio + $marcos))
                 fi
             done
         fi
@@ -402,11 +542,17 @@ function introducirPagina() {
 #
 #############################
 function paso() {
+    clear
+    header 0 0
+    header 1 0
+    echo
+    salidaEjecucion
 
-    salidaEjecucucion
+    #? Se eliminan los proceos que han terminado
+    vaciarMemoria
 
     #? se introducen los procesos que han llegado en la cola segun prioridad
-    for proceso in ordenarLlegada; do
+    for proceso in ${ordenLlegada[@]}; do
         if [[ ${procLlegada[$proceso]} -eq $tiempo ]]; then
             introducirPrioridad $proceso
         fi
@@ -420,8 +566,20 @@ function paso() {
         introducirEnMemoria
     fi
 
-    #? por cada proceso en memoria se elige uno por paso para introducir una pagina nueva
+    #? por cada proceso en memoria se elige uno por paso para introducir una pagina nueva (segun prioridad)
+    #TODO prioridad MAYOR MENOR // se ppuedo meter en un modulo
+    local -i gtPri elegido
 
+    for p in ${!procesosMemoria[@]}; do
+        echo $p
+        if [[ ${procPrioridad[$p]} -gt $gtPri ]] || [[ -z "$gtPri" ]]; then
+            gtPri=${procPrioridad[$p]}
+            elegido=$p
+        fi
+    done
+
+    echo " Introduciendo la pagina de $gtPri"
+    introducirPagina $elegido
     ## Despues se introducen los procesos que quepan en esos segmentos
 
     read -p "Pulsa [Intro] para continuar"
@@ -521,19 +679,20 @@ function log() {
 #   banda de tiempo
 #############################
 
-function salidaEjecucucion() {
+function salidaEjecucion() {
     #? tamaño de columna
     local -r colsize=9 marco=7
 
     local -r formatoTitulo="${bold}${underline}%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %-${colsize}s\n"
     local -r formatoFilas="${nounderline}%7s%03d%${colsize}d %${colsize}d %${colsize}d %${colsize}d %${colsize}d %${colsize}d %${colsize}d %${colsize}d %${colsize}s\n"
 
+    local pagina
     printf "${formatoTitulo}" \
         "Proceso" "T.Lleg" "T.Ejec" "N.Marcos" "Prioridad" "T.Esp" "T.Ret" "T.R.Ejec" "Estado" "Paginas"
 
     for p in ${ordenLlegada[@]}; do
         printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
-            '' $p ${procLlegada[$p]} 0 ${procTamano[$p]} ${procPrioridad[$p]} 0 3 2 1 "${procDirecciones[$p]}"
+            '' $p ${procLlegada[$p]} 0 ${procTamano[$p]} ${procPrioridad[$p]} 0 3 ${fallosProceso[$p]} 0 "${procDirecciones[$p]}"
     done
     printf "${NC}"
 
@@ -547,7 +706,13 @@ function salidaEjecucucion() {
         if [[ ${memPrincipal[$mc]} -eq -1 ]]; then
             printf "\033[1;47m%${marco}s|"
         else
-            printf "${Negro}\e[${fondos[${memPrincipal[$mc]}]}m%${marco}s|" ${memPagina[$mc]}
+            if [[ ${memPagina[$mc]} -ne -1 ]]; then
+                pagina=${memPagina[$mc]}
+            else
+                pagina=
+            fi
+
+            printf "${Negro}\e[${fondos[${memPrincipal[$mc]}]}m%${marco}s|" $pagina
         fi
 
     done
@@ -556,7 +721,7 @@ function salidaEjecucucion() {
 
     #! linea de tiempo
 
-    printf "\n${bold}${underline}BANDA DE MEMORIA${nounderline}\n\n"
+    printf "\n${bold}${underline}BANDA DE TIEMPO${nounderline}\n\n"
 
     printf "${bold}║"
 
@@ -580,11 +745,13 @@ function valoresIniciales() {
     dirPagina=100
     dirTotales=1000
     numMarcos=10
-    procPrioridad=(0 0)
-    procLlegada=(0 0)
-    procTamano=(5 5)
-    procDirecciones=(123,34,543,412,534 761,435,654,123,98,34,123)
+    procPrioridad=(0)
+    procLlegada=(0)
+    procTamano=(3)
+    procDirecciones=(123,34,543,412,534,789,434,900,400,300)
+    fallosProceso=(0 0)
     #ordenLlegada=(0 1)
+    procesosRestantes=1
 }
 
 ############ VARIABLES ############
@@ -592,7 +759,7 @@ function valoresIniciales() {
 declare -i finalizado priMayor priMenor invertido=0 #? si se ha invertido la prioridad mayor/menor
 declare prioridad                                   #? m o M
 
-declare -i dirTotales
+declare -i dirTotales procesosTotales procesosRestantes
 declare -i dirPagina #? Numero de procesos por pagina
 declare -i numMarcos #? Numero de marcos en memoria principal
 
@@ -613,12 +780,13 @@ declare -a bandaTiempoProceso #? Que proceso se ha ejecutado en cada momento
 declare -a bandaTiempoMarco   #? Que pagina se ha introducido en que momento
 
 #! Relativo a las paginas
-# no se incluye procDirecciones y memPaginas
+# no se incluye procDirecciones y memPagina
 declare -A paginasRestantes #? paginas que quedan por cada proceso
 
 #! datos estadisticos
 # relativos al rendimiento del algoritmo
 declare -a fallosProceso tiempoEspera tiempoRetorno tiempoEjecucion tiempoREjecucion
+declare -a tiempoEntrada tiempoSalida
 
 #! colores
 declare Rojo='\033[0;31m' Negro='\033[0;30m' NC='\033[0m'
@@ -652,10 +820,12 @@ inicializarMemoria
 
 # hasta que finalize la cola, o hay una parada por limite de tiempo (para evitar un bucle infinito)
 tiempo=0
-until [[ finalizado -eq 1 ]] || [[ $tiempo -gt 1000 ]]; do
+until [[ $procesosRestantes -eq 0 ]] || [[ $tiempo -gt 1000 ]]; do
     paso
     ((tiempo++))
 done
+
+#TODO: Resumen final
 
 # echo "${procPrioridad[@]}"
 # echo "${procTamano[@]}"
