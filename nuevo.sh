@@ -266,6 +266,7 @@ function reservarMemoria() {
             memPrincipal[$i]=$1
         done
         tiempoEntrada[$1]=$tiempo
+
     fi
 }
 
@@ -290,6 +291,8 @@ function liberarMemoria() {
 
             unset procesosMemoria[$1]
             tiempoSalida[$i]=$tiempo
+            #? se modifica el estado
+
         fi
     fi
 }
@@ -352,6 +355,9 @@ function introducirEnMemoria() {
 
             #? se reserva la memoria para el proceso ultimo de la lista SIEMPRE
             reservarMemoria ${ordenPrioridad[0]} $optimo
+
+            #? se modifica el estado
+            procEstado[${ordenPrioridad[0]}]=2
 
             #? se elimina el proceso de la cola
             desplazarPrioridad
@@ -636,9 +642,18 @@ function paso() {
 
     done
 
+    #? como solo puede haber un proceso en ejecucion, el que lo estaba antes pasa a en pausa
+    for ((p = 0; p < ${#procEstado[@]}; p++)); do
+        if [[ ${procEstado[$p]} -eq 3 ]]; then
+            procEstado[$p]=2
+        fi
+    done
+
     if [[ -n $elegido ]]; then
         echo "Se va a introducir una pagina en el proceso $elegido"
         introducirPagina $elegido
+        #? se modifica el estado a ejecutandose
+        procEstado[$elegido]=3
     fi
 
     clear
@@ -748,18 +763,37 @@ function salidaEjecucion() {
     #? tamaño de columna
     local -r colsize=3 marco=3
 
-    local -r formatoTitulo=" ${bold}${underline}%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %-${colsize}s${nounderline}\n"
-    local -r formatoFilas=" %1s%03d%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s\n"
+    local -r formatoTitulo=" ${bold}${underline}%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %-13s %-${colsize}s${nounderline}\n"
+    local -r formatoFilas=" %1s%03d%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s  %-13s %${colsize}s\n"
 
     local pagina
     printf "${formatoTitulo}" \
-        "Ref" "Tll" "Tej" "Mem" "Pri" "Esp" "Ret" "Resp" "Est" "Paginas"
+        "Ref" "Tll" "Tej" "Mem" "Pri" "Esp" "Ret" "Resp" "Estado" "Paginas"
 
     ordenarLlegada
 
+    local estado
     for p in ${ordenLlegada[@]}; do
+        case "${procEstado[$p]}" in
+        "0")
+            estado="Fuera"
+            ;;
+        "1")
+            estado="En cola"
+            ;;
+        "2")
+            estado="En memoria"
+            ;;
+        "3")
+            estado="En ejecucion"
+            ;;
+        "4")
+            estado="Finalizado"
+            ;;
+        esac
+
         printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
-            "" "$p" "${procLlegada[$p]}" "0" "${procTamano[$p]}" "${procPrioridad[$p]}" "0" "3" "${fallosProceso[$p]}" "0" "${paginasRestantes[$p]}"
+            "" "$p" "${procLlegada[$p]}" "0" "${procTamano[$p]}" "${procPrioridad[$p]}" "0" "3" "${fallosProceso[$p]}" "$estado" "${paginasRestantes[$p]}"
     done
     printf "${NC}"
 
@@ -984,7 +1018,7 @@ declare -a fondos=("1;41" "42" "1;43" "44" "45" "46" "1;45" "40")
 declare -i mostar        #? si queremos que se muestre un paso de la ejecucion
 declare -i ninguno debug #? si queremos que no se muestre ningun paso o que se muestren todos
 
-############ EJECUCION PRINCIPAL ############
+#####!####### EJECUCION PRINCIPAL #####!#######
 
 # Recogida de datos
 clear
@@ -1006,9 +1040,10 @@ ordenarLlegada
 # Llena la memoria de -1
 inicializarMemoria
 
-# Se inicializa la cola de paginas restantes
+# Se inicializa la cola de paginas restantes y los estados
 for ((p = 0; p < ${#procLlegada[@]}; p++)); do
     paginasRestantes+=([$p]=$(convertirDirecciones ${procDirecciones[$p]}))
+    procEstado[$p]=0
 done
 
 # hasta que finalize la cola, o hay una parada por limite de tiempo (para evitar un bucle infinito)
