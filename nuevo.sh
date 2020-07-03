@@ -357,7 +357,6 @@ function introducirEnMemoria() {
             desplazarPrioridad
             #se pasan las paginas a la lista de paginas resatantes
 
-
         fi
 
         unset optimo
@@ -422,6 +421,15 @@ function introducirPagina() {
 #   Input <-- $1=proceso $2=pagina
 #############################
 
+function introducirBandaTiempo() {
+    if [[ $# -ne 2 ]]; then
+        echo "Numero incorrecto de parametros [introducirBandaTiempo] se esperaban 2"
+    else
+        bandaTiempoProceso+=($1)
+        bandaTiempoMarco+=($2)
+    fi
+}
+
 #############################
 #   Obtiene los marcos vacios de un proceso en memoria
 #   Input <-- $1 = proceso
@@ -463,8 +471,6 @@ function sustituirPagina() {
         local -a enMemoria restantes
         local -A tiempoPagina #? tiempo que va a tardar la pagina en volver k=pagina v=tiempo
 
-
-
         IFS=', ' read -r -a restantes <<<"${paginasRestantes[$1]}"
 
         #1 se recogen todas las paginas introducidas en memoria para el proceso
@@ -500,8 +506,10 @@ function sustituirPagina() {
             done
             ((fallosProceso[$1]++))
             memPagina[$mayorTiempo]=${restantes[0]}
+
         fi
 
+        introducirBandaTiempo $1 ${restantes[0]}
         paginasRestantes[$1]=$(desplazarPaginasRestantes $1)
 
     fi
@@ -533,6 +541,7 @@ function introducirPaginaVacios() {
             for ((i = $inicio; i < (($inicio + $marcos)); i++)); do
                 if [[ ${memPagina[$i]} -eq -1 ]]; then
                     memPagina[$i]=${paginas[0]}
+                    introducirBandaTiempo $1 ${paginas[0]}
                     paginasRestantes[$1]=$(desplazarPaginasRestantes $1)
                     #!solo se puede meter uno por ud de tiempo
                     i=$(($inicio + $marcos))
@@ -541,6 +550,7 @@ function introducirPaginaVacios() {
                     ((fallosProceso[$1]++))
                 elif [[ ${memPagina[$i]} -eq ${paginas[0]} ]]; then
                     #? No se produce fallo de pagina
+                    introducirBandaTiempo $1 ${paginas[0]}
                     paginasRestantes[$1]=$(desplazarPaginasRestantes $1)
                     i=$(($inicio + $marcos))
                 fi
@@ -554,11 +564,6 @@ function introducirPaginaVacios() {
 #
 #############################
 function paso() {
-    clear
-    header 0 0
-    header 1 0
-    echo
-    salidaEjecucion
 
     #? Se eliminan los proceos que han terminado
     vaciarMemoria
@@ -566,8 +571,10 @@ function paso() {
     #? se introducen los procesos que han llegado en la cola segun prioridad
     for proceso in ${ordenLlegada[@]}; do
         if [[ ${procLlegada[$proceso]} -eq $tiempo ]]; then
-            echo -e "${Rojo}Se introduce el proceso $proceso en la cola ${NC}"
+            #echo -e "${Rojo}Se introduce el proceso $proceso en la cola ${NC}"
             introducirPrioridad $proceso
+            # se modifica el estado
+            procEstado[$proceso]=1
         fi
     done
 
@@ -583,7 +590,6 @@ function paso() {
     #TODO: se ppuedo meter en un modulo
     local -i gtPri elegido
 
-    
     for p in ${!procesosMemoria[@]}; do
         echo "Comprobando proceso $p"
         if [[ $prioridad = "m" ]]; then
@@ -593,7 +599,7 @@ function paso() {
                 if [[ ${procPrioridad[$p]} -gt $gtPri ]] || [[ -z "$gtPri" ]]; then
                     gtPri=${procPrioridad[$p]}
                     elegido=$p
-                    
+
                 fi
             else
                 echo "PRI m NO INVERTIDO"
@@ -635,7 +641,11 @@ function paso() {
         introducirPagina $elegido
     fi
 
-    ## Despues se introducen los procesos que quepan en esos segmentos
+    clear
+    header 0 0
+    header 1 0
+    echo
+    salidaEjecucion
 
     read -p "Pulsa [Intro] para continuar"
 }
@@ -736,7 +746,7 @@ function log() {
 
 function salidaEjecucion() {
     #? tamaño de columna
-    local -r colsize=3 marco=5
+    local -r colsize=3 marco=3
 
     local -r formatoTitulo=" ${bold}${underline}%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %-${colsize}s${nounderline}\n"
     local -r formatoFilas=" %1s%03d%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s\n"
@@ -752,9 +762,23 @@ function salidaEjecucion() {
             "" "$p" "${procLlegada[$p]}" "0" "${procTamano[$p]}" "${procPrioridad[$p]}" "0" "3" "${fallosProceso[$p]}" "0" "${paginasRestantes[$p]}"
     done
     printf "${NC}"
-    
 
     #! banda de memoria
+
+    #? identificadores
+
+    printf "%4s" " "
+    local -i espacios
+    local color
+
+    for p in ${!procesosMemoria[@]}; do
+        espacios=$((${procTamano[$p]} * $marco))
+        color=${proc_color_secuencia[$p]}
+        printf "\e[${color}m%03d%${espacios}s${NC}" $p " "
+    done
+    printf "\n"
+
+    #? banda
 
     printf " ${bold}${underline}BM${nounderline}"
 
@@ -777,8 +801,45 @@ function salidaEjecucion() {
 
     printf "${NC}${normal}║\n"
 
+    #? numeros
+    local -i espacios anterior
+    printf "%3s" " "
+    local -i posicion=0 final=$((${#memPrincipal[@]} - 1))
+    for p in ${memPrincipal[@]}; do
+        if [[ $p -ne $anterior ]] || [[ -z $anterior ]] || [[ $posicion -eq $final ]]; then
+            espacios=$(($marco - 2))
+            color=${proc_color_secuencia[$p]}
+            printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $posicion
+        else
+            espacios=$(($marco + 1))
+            printf "%${espacios}s" " "
+        fi
+        anterior=$p
+        ((posicion++))
+    done
+    printf "\n"
+
     #! linea de tiempo
 
+    #? identificadores
+    #printf "%4s" " "
+
+    local color
+
+    printf "%3s" " "
+    for p in ${bandaTiempoProceso[@]}; do
+        if [[ $p -ne $anterior ]] || [[ -z $anterior ]]; then
+            espacios=$(($marco - 2))
+            color=${proc_color_secuencia[$p]}
+            printf "\e[${color}m%${espacios}s%03d${NC}" " " $p
+        else
+            espacios=$(($marco + 1))
+            printf "%${espacios}s" " "
+        fi
+        anterior=$p
+    done
+
+    #? banda
     printf "\n ${bold}${underline}BT${nounderline}"
 
     printf "${bold}║"
@@ -793,7 +854,26 @@ function salidaEjecucion() {
 
     printf "${NC}${normal}║\n"
 
+    #? posiciones
+    printf "%3s" " "
+
+    posicion=0
+    final=$((${#bandaTiempoProceso[@]} - 1))
+    for p in ${bandaTiempoProceso[@]}; do
+        if [[ $p -ne $anterior ]] || [[ -z $anterior ]] || [[ $posicion -eq $final ]]; then
+            espacios=$(($marco - 2))
+            color=${proc_color_secuencia[$p]}
+            printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $posicion
+        else
+            espacios=$(($marco + 1))
+            printf "%${espacios}s" " "
+        fi
+        anterior=$p
+        ((posicion++))
+    done
+    printf "\n"
 }
+
 #######################
 #   Calcula el tiempo de ejecucion
 #
@@ -840,8 +920,8 @@ function valoresIniciales() {
     dirPagina=100
     dirTotales=1000
     numMarcos=10
-    procPrioridad=(1 2 0)
-    procLlegada=(0 0 5)
+    procPrioridad=(3 0 1)
+    procLlegada=(0 2 5)
     procTamano=(3 4 4)
     procDirecciones=(123,34,543,412,534,789,434,900,400,300 6456,445,345,87,324,654,876,922,1293,344,2344,534,678 654,234,568,234,7569,78,3456,8678,35,75,6783,345,65,688)
     fallosProceso=(0 0 0)
@@ -861,7 +941,16 @@ declare -i numMarcos #? Numero de marcos en memoria principal
 declare -i tiempo #! IMPORTANTE: tiempo de ejecucion, solo se aumenta en paso
 
 declare -a procPrioridad procTamano procLlegada procDirecciones ordenLlegada
-declare -a ordenPrioridad
+declare -a ordenPrioridad #? Procesos que hayan llegado por orden de prioridad
+##########################
+#   Estados
+#   0 - no ha llegado
+#   1 - ha llegado, en cola
+#   2 - en memoria principla
+#   3 - ejecutandose
+#   4 - terminado
+##########################
+declare -a procEstado
 
 #! Bandas de memoria
 declare -a memPrincipal #? memoria usada, N = proceso, -1 = vacia, cada indice es un marco
@@ -892,7 +981,7 @@ declare -a proc_color_secuencia=("1;31" "32" "1;33" "34" "35" "36" "1;35" "37")
 declare -a fondos=("1;41" "42" "1;43" "44" "45" "46" "1;45" "40")
 
 #! relativo a eventos
-declare -i mostar #? si queremos que se muestre un paso de la ejecucion
+declare -i mostar        #? si queremos que se muestre un paso de la ejecucion
 declare -i ninguno debug #? si queremos que no se muestre ningun paso o que se muestren todos
 
 ############ EJECUCION PRINCIPAL ############
