@@ -761,10 +761,10 @@ function log() {
 
 function salidaEjecucion() {
     #? tamaño de columna
-    local -r colsize=3 marco=3
+    local -r colsize=4 marco=3
 
-    local -r formatoTitulo=" ${bold}${underline}%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %-13s %-${colsize}s${nounderline}\n"
-    local -r formatoFilas=" %1s%03d%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s  %-13s %${colsize}s\n"
+    local -r formatoTitulo="${bold}${underline}%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %-13s %-${colsize}s${nounderline}\n"
+    local -r formatoFilas="%1s%03d%${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s %${colsize}s  %-13s %${colsize}s\n"
 
     local pagina
     printf "${formatoTitulo}" \
@@ -777,6 +777,7 @@ function salidaEjecucion() {
 
     for p in ${ordenLlegada[@]}; do
 
+        #? estado
         case "${procEstado[$p]}" in
         "0")
             estado="Fuera"
@@ -795,6 +796,7 @@ function salidaEjecucion() {
             ;;
         esac
 
+        #? tiempo de retorno
         tEjec=$(calcularEjec $p)
         if [[ tiempoSalida[$p] -ne 0 ]]; then
             tRet=$((tiempoSalida[$p] - tiempoEntrada[$p]))
@@ -802,21 +804,22 @@ function salidaEjecucion() {
             tRet="---"
         fi
 
+        #? tiempo de respuesta
         if [[ tiempoSalida[$p] -ne 0 ]]; then
             tResp=$((tiempoSalida[$p] - procLlegada[$p]))
         else
             tResp="---"
         fi
 
-        #declare -p tiempoEntrada procLlegada
+        #? tiempo de espera
         if [[ $((tiempoEntrada[$p] - procLlegada[$p])) -ge 0 ]]; then
             tEsp=$((tiempoEntrada[$p] - procLlegada[$p]))
         else
             tEsp="---"
-        fi        
+        fi
 
         printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
-            " " "$p" "${procLlegada[$p]}" "$tEjec" "${procTamano[$p]}" "${procPrioridad[$p]}" "$tEsp" "$tRet" "$tResp" "$estado" "${paginasRestantes[$p]}"
+            "" "$p" "${procLlegada[$p]}" "$tEjec" "${procTamano[$p]}" "${procPrioridad[$p]}" "$tEsp" "$tRet" "$tResp" "$estado" "${paginasRestantes[$p]}"
     done
     printf "${NC}"
 
@@ -879,7 +882,7 @@ function salidaEjecucion() {
     #! linea de tiempo
 
     #? identificadores
-    #printf "%4s" " "
+
 
     local color
 
@@ -969,6 +972,45 @@ function salidaProceso() {
     done
 }
 
+#######################
+#   Muenstra los datos de los procesos al finalizar la ejecucion
+#
+#######################
+function resumenFinal() {
+    local -i colsize=11
+
+    local -r formatoTitulo=" ${bold}${underline} %3s%${colsize}s%${colsize}s%${colsize}s%${colsize}s %${colsize}s${normal}"
+    local -r formatoFilas=" ${nounderline} %03d%${colsize}s%${colsize}s%${colsize}s%${colsize}s %${colsize}s${normal}"
+
+    printf "${formatoTitulo}\n" \
+        "Ref" "Llegada" "Salida" "Espera" "Respuesta" "Fallos"
+
+    local -i tResp tEsp
+    for ((p = 0; p < ${#procLlegada[@]}; p++)); do
+        #? tiempo de respuesta
+        tResp=$((tiempoSalida[$p] - procLlegada[$p]))
+        #? tiempo de espera
+        tEsp=$((tiempoEntrada[$p] - procLlegada[$p]))
+        printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
+            "$p" "${procLlegada[$p]}" "${tiempoSalida[$p]}" "$tEsp" "$tResp" "${fallosProceso[$p]}"
+        printf "\n"
+    done
+
+    #? valores medios
+    local -i mEsp=0 mResp=0 mFail=0
+
+    for ((p = 0; p < ${#procLlegada[@]}; p++))
+    do
+        let mEsp+=$((tiempoEntrada[$p] - procLlegada[$p]))
+        let mResp+=$((tiempoSalida[$p] - procLlegada[$p]))
+        let mFail+=${fallosProceso[$p]}
+    done
+
+    printf "Tiempo de espera medio: %s \n" $(bc <<< "scale=4; $mEsp/${#procLlegada[@]}")
+    printf "Tiempo de respuesta medio: %s\n" $(bc <<< "scale=4; $mResp/${#procLlegada[@]}")
+    printf "Numero de fallos medio: %s\n" $(bc <<< "scale=4; $mFail/${#procLlegada[@]}")
+}
+
 ############ DEBUG ############
 function valoresIniciales() {
     priMayor=10
@@ -999,6 +1041,7 @@ declare -i tiempo #! IMPORTANTE: tiempo de ejecucion, solo se aumenta en paso
 
 declare -a procPrioridad procTamano procLlegada procDirecciones ordenLlegada
 declare -a ordenPrioridad #? Procesos que hayan llegado por orden de prioridad
+
 ##########################
 #   Estados
 #   0 - no ha llegado
@@ -1028,6 +1071,7 @@ declare -A paginasRestantes #? paginas que quedan por cada proceso
 # relativos al rendimiento del algoritmo
 declare -a fallosProceso tiempoEspera tiempoRetorno tiempoEjecucion tiempoREjecucion
 declare -a tiempoEntrada tiempoSalida
+declare cadenaEventos
 
 #! colores
 declare Rojo='\033[0;31m' Negro='\033[0;30m' NC='\033[0m'
@@ -1077,8 +1121,10 @@ until [[ $procesosRestantes -eq 0 ]] || [[ $tiempo -gt 1000 ]]; do
 done
 
 #TODO: Resumen final
-
-echo "EJECUCION FINALIZADA"
+clear
+header 0 1
+header 1 1
+resumenFinal
 
 # echo "${procPrioridad[@]}"
 # echo "${procTamano[@]}"
