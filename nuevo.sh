@@ -879,59 +879,15 @@ function salidaEjecucion() {
     done
     printf "\n"
 
-    #! linea de tiempo
+    #! banda de tiempo
+    #! para permitir que sea multilinea
+    local -i ancho=10
 
-    #? identificadores
-
-
-    local color
-
-    printf "%3s" " "
-    for p in ${bandaTiempoProceso[@]}; do
-        if [[ $p -ne $anterior ]] || [[ -z $anterior ]]; then
-            espacios=$(($marco - 2))
-            color=${proc_color_secuencia[$p]}
-            printf "\e[${color}m%${espacios}s%03d${NC}" " " $p
-        else
-            espacios=$(($marco + 1))
-            printf "%${espacios}s" " "
-        fi
-        anterior=$p
+    declare -p bandaTiempoProceso
+    for ((i = 0; i < ${#bandaTiempoProceso[@]}; i = i + ancho)); do
+        imprimirBanda $i $((i + ancho)) $marco
     done
 
-    #? banda
-    printf "\n ${bold}${underline}BT${nounderline}"
-
-    printf "${bold}║"
-
-    for ((mc = 0; mc < ${#bandaTiempoProceso[@]}; mc++)); do
-        if [[ ${bandaTiempoProceso[$mc]} -eq -1 ]]; then
-            printf "\033[1;47m%${marco}s|"
-        else
-            printf "${Negro}\e[${fondos[${bandaTiempoProceso[$mc]}]}m%${marco}s|" ${bandaTiempoMarco[$mc]}
-        fi
-    done
-
-    printf "${NC}${normal}║\n"
-
-    #? posiciones
-    printf "%3s" " "
-
-    posicion=0
-    final=$((${#bandaTiempoProceso[@]} - 1))
-    for p in ${bandaTiempoProceso[@]}; do
-        if [[ $p -ne $anterior ]] || [[ -z $anterior ]] || [[ $posicion -eq $final ]]; then
-            espacios=$(($marco - 2))
-            color=${proc_color_secuencia[$p]}
-            printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $posicion
-        else
-            espacios=$(($marco + 1))
-            printf "%${espacios}s" " "
-        fi
-        anterior=$p
-        ((posicion++))
-    done
-    printf "\n"
 }
 
 #######################
@@ -942,6 +898,84 @@ function calcularEjec() {
     local -a direcs
     IFS=', ' read -r -a direcs <<<"${procDirecciones[$1]}"
     echo ${#direcs[@]}
+}
+
+#######################
+#   Imprime una seccion de la banda de tiempo
+#   $1 = inicio $2 = maximo $3 = ancho para el marco
+#
+#######################
+function imprimirBanda() {
+    local -i ini=$1 max=$2 marco=$3
+    local anterior
+
+
+    if [[ $max -ge ${#bandaTiempoProceso[@]} ]]; then
+        max=$((${#bandaTiempoProceso[@]}))
+    fi
+
+    if [[ $ini -gt ${#bandaTiempoProceso[@]} ]]; then
+        ini=$((${#bandaTiempoProceso[@]} - 1))
+    fi
+
+    #? identificadores
+    local -i espacios
+    printf "%3s" " "
+    until [[ $ini -eq $max ]]; do
+        if [[ ${bandaTiempoProceso[$ini]} -ne $anterior ]] || [[ -z $anterior ]]; then
+            espacios=$(($marco - 2))
+            color=${proc_color_secuencia[${bandaTiempoProceso[$ini]}]}
+            printf "\e[${color}m%${espacios}s%03d${NC}" " " ${bandaTiempoProceso[$ini]}
+        else
+            espacios=$(($marco + 1))
+            printf "%${espacios}s" " "
+        fi
+        anterior=${bandaTiempoProceso[$ini]}
+        let ini++
+    done
+    printf "${NC}${normal}\n"
+
+    #? banda
+    ini=$1
+
+    if [[ $ini -eq 0 ]]; then
+        printf " ${bold}${underline}BM${nounderline}║"
+    else
+        printf "%4s" " "
+    fi 
+
+    until [[ $ini -eq $max ]]; do
+        if [[ ${bandaTiempoProceso[$ini]} -eq -1 ]]; then
+            printf "\033[1;47m%${marco}s|"
+        else
+            printf "${Negro}\e[${fondos[${bandaTiempoProceso[$ini]}]}m%${marco}s|" ${bandaTiempoMarco[$ini]}
+        fi
+        let ini++
+    done
+    printf "${NC}${normal}\n"
+
+    #? numeros
+    printf "%3s" " "
+    ini=$1
+    final=$((${#bandaTiempoProceso[@]} - 1))
+    local anterior=
+    until [[ $ini -eq $max ]]; do
+        if [[ ${bandaTiempoProceso[$ini]} -ne $anterior ]] || [[ -z $anterior ]]; then
+            espacios=$(($marco - 2))
+            color=${proc_color_secuencia[${bandaTiempoProceso[$ini]}]}
+            printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $ini
+        elif [[ $ini -eq $((max - 1)) ]]; then
+            espacios=0
+            color=${proc_color_secuencia[${bandaTiempoProceso[$ini]}]}
+            printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $ini
+        else
+            espacios=$(($marco + 1))
+            printf "%${espacios}s" " "
+        fi
+        anterior=${bandaTiempoProceso[$ini]}
+        ((ini++))
+    done
+    printf "\n"
 }
 
 #######################
@@ -999,16 +1033,15 @@ function resumenFinal() {
     #? valores medios
     local -i mEsp=0 mResp=0 mFail=0
 
-    for ((p = 0; p < ${#procLlegada[@]}; p++))
-    do
+    for ((p = 0; p < ${#procLlegada[@]}; p++)); do
         let mEsp+=$((tiempoEntrada[$p] - procLlegada[$p]))
         let mResp+=$((tiempoSalida[$p] - procLlegada[$p]))
         let mFail+=${fallosProceso[$p]}
     done
 
-    printf "Tiempo de espera medio: %s \n" $(bc <<< "scale=4; $mEsp/${#procLlegada[@]}")
-    printf "Tiempo de respuesta medio: %s\n" $(bc <<< "scale=4; $mResp/${#procLlegada[@]}")
-    printf "Numero de fallos medio: %s\n" $(bc <<< "scale=4; $mFail/${#procLlegada[@]}")
+    printf "Tiempo de espera medio: %s \n" $(bc <<<"scale=4; $mEsp/${#procLlegada[@]}")
+    printf "Tiempo de respuesta medio: %s\n" $(bc <<<"scale=4; $mResp/${#procLlegada[@]}")
+    printf "Numero de fallos medio: %s\n" $(bc <<<"scale=4; $mFail/${#procLlegada[@]}")
 }
 
 ############ DEBUG ############
@@ -1082,7 +1115,7 @@ declare -a proc_color_secuencia=("1;31" "32" "1;33" "34" "35" "36" "1;35" "37")
 declare -a fondos=("1;41" "42" "1;43" "44" "45" "46" "1;45" "40")
 
 #! relativo a eventos
-declare -i mostar        #? si queremos que se muestre un paso de la ejecucion
+declare -i mostar=1      #? si queremos que se muestre un paso de la ejecucion
 declare -i ninguno debug #? si queremos que no se muestre ningun paso o que se muestren todos
 
 #####!####### EJECUCION PRINCIPAL #####!#######
@@ -1121,7 +1154,7 @@ until [[ $procesosRestantes -eq 0 ]] || [[ $tiempo -gt 1000 ]]; do
 done
 
 #TODO: Resumen final
-clear
+#clear
 header 0 1
 header 1 1
 resumenFinal
