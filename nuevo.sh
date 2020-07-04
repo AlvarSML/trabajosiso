@@ -290,7 +290,7 @@ function liberarMemoria() {
             done
 
             unset procesosMemoria[$1]
-            tiempoSalida[$i]=$tiempo
+            tiempoSalida[$1]=$tiempo
             #? se modifica el estado
 
         fi
@@ -768,12 +768,15 @@ function salidaEjecucion() {
 
     local pagina
     printf "${formatoTitulo}" \
-        "Ref" "Tll" "Tej" "Mem" "Pri" "Esp" "Ret" "Resp" "Estado" "Paginas"
+        "Ref" "Tll" "Tej" "Nma" "Pri" "Esp" "Ret" "Resp" "Estado" "Paginas"
 
     ordenarLlegada
 
     local estado
+    local tEjec tRet tResp tEsp
+
     for p in ${ordenLlegada[@]}; do
+
         case "${procEstado[$p]}" in
         "0")
             estado="Fuera"
@@ -792,8 +795,28 @@ function salidaEjecucion() {
             ;;
         esac
 
+        tEjec=$(calcularEjec $p)
+        if [[ tiempoSalida[$p] -ne 0 ]]; then
+            tRet=$((tiempoSalida[$p] - tiempoEntrada[$p]))
+        else
+            tRet="---"
+        fi
+
+        if [[ tiempoSalida[$p] -ne 0 ]]; then
+            tResp=$((tiempoSalida[$p] - procLlegada[$p]))
+        else
+            tResp="---"
+        fi
+
+        #declare -p tiempoEntrada procLlegada
+        if [[ $((tiempoEntrada[$p] - procLlegada[$p])) -ge 0 ]]; then
+            tEsp=$((tiempoEntrada[$p] - procLlegada[$p]))
+        else
+            tEsp="---"
+        fi        
+
         printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
-            "" "$p" "${procLlegada[$p]}" "0" "${procTamano[$p]}" "${procPrioridad[$p]}" "0" "3" "${fallosProceso[$p]}" "$estado" "${paginasRestantes[$p]}"
+            " " "$p" "${procLlegada[$p]}" "$tEjec" "${procTamano[$p]}" "${procPrioridad[$p]}" "$tEsp" "$tRet" "$tResp" "$estado" "${paginasRestantes[$p]}"
     done
     printf "${NC}"
 
@@ -910,7 +933,7 @@ function salidaEjecucion() {
 
 #######################
 #   Calcula el tiempo de ejecucion
-#
+#   Input <- $1 numero del proceso
 #######################
 function calcularEjec() {
     local -a direcs
