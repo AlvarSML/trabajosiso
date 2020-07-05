@@ -1,10 +1,128 @@
 ############ FUNCIONES ############
+#############################
+#   Obtiene los datos por archivo
+#
+#############################
+function leerArchivo() {
+    if [[ $# -eq 1 ]]; then
+        echo "Especifica un nombre de archivo"
+        exit 1
+    else
+        if [[ -f $2 ]]; then
+            #? lectura de datos
+            input="$2"
+            local i=0
+            while IFS= read -r line; do
+                #? para leer los valores iniciales
+                if [[ ! $line == +* ]] && [[ -n $line ]]; then
+                    procPrioridad[$i]=$(echo $line | cut -d ';' -f1)   #guarda el tamaño, porque va cortando todolo separado por ; y coge la 1ª columna(-f1)
+                    procTamano[$i]=$(echo $line | cut -d ';' -f2)      #guarda las paginas
+                    procDirecciones[$i]=$(echo $line | cut -d ';' -f3) #guarda el tiempo de llegada
+                    procLlegada[$i]=$(echo $line | cut -d ';' -f4)     #guarda el tiempo de llegada
+                    ((i++))
+                else
+                    #? para leer los proceos
+                    echo "probando $(echo $line | tr -d '+' | cut -d ':' -f1)"
+                    case $(echo $line | tr -d '+' | cut -d ':' -f1) in
+                    "VALOR_MENOR")
+                        priMenor=$(echo $line | cut -d ':' -f2)
+                        ;;
+                    "VALOR_MAYOR")
+                        priMayor=$(echo $line | cut -d ':' -f2)
+                        ;;
+                    "DIRECCIONES_TOTALES")
+                        dirTotales=$(echo $line | cut -d ':' -f2)
+                        ;;
+                    "DIRECCIONES_PAGINA")
+                        dirPagina=$(echo $line | cut -d ':' -f2)
+                        ;;
+                    "PRIORIDAD")
+                        prioridad=$(echo $line | cut -d ':' -f2)
+                        ;;
+                    *)
+                        echo 'CONFIGURACIÓN EN FICHERO NO VÁLIDA'
+                        exit 1
+                        ;;
+                    esac
+                fi
+            done <"$input"
+
+        else
+            echo "El archivo no existe"
+            exit 1
+        fi
+    fi
+
+    procesosRestantes=$i
+}
+
+#############################
+#   Obtiene los argumentos
+#   -d - modo debug
+#   -f - file + nombre
+#   -s - solo salida por archivo
+#   -h - ayuda
+#############################
+function leerArgumentos() {
+    if [[ $# -gt 0 ]]; then
+        case $1 in
+        -d | --debug) #si el parametro es s o silencio
+            debug=1
+            ;;
+        -f | --file)
+            mArchivo=1
+            leerArchivo $@
+            ;;
+        -s | --silencio)
+            silencio=1
+            ;;
+        -h | --help)
+            mostrarAyuda
+            ;;
+        esac
+    fi
+}
+
+#############################
+#   Muestra la ayuda del programa
+#############################
+function mostrarAyuda() {
+    clear
+    echo "--AYUDA--"
+    echo "-d|--debug - modo debug"
+    echo "-f|--file - archivo + nombre del nombre"
+    echo "-s|--silencio - solo salida por archivo"
+    echo "-h|--help - ayuda(estas aqui)"
+    echo
+    echo "--INFO--"
+    echo "Autor: Alvar San Martin"
+    echo "Fecha de ultima modificacion: 05/07/2020"
+    echo "Repositorio: https://github.com/alvarsnow/trabajosiso"
+    read -p "--- Intro para salir ---"
+    echo
+    exit 0
+}
 
 #############################
 #   Obtiene los datos basicos por pantalla
 #
 #############################
 function pedirDatos() {
+
+    #? Direcciones de memoria
+    until [[ $dirTotales > 0 ]]; do
+        printf "\e[1A%80s\r" " " #imprimir 80 espacios en color 1A
+        read -p " Número de direcciones totales de la memoria: " dirTotales
+        printf "\e[91mINTRODUCE UN NÚMERO SUPERIOR A 0\e[39m\r"
+    done
+    printf "%*s\n" "$(tput cols)" " "
+
+    until [[ $dirPagina -gt 0 ]] && [[ $(($dirTotales % $dirPagina)) = 0 ]]; do
+        printf "\e[1A%80s\r" " " #imprimir 80 espacios en color 1A
+        read -p " Número de direcciones por pagina: " dirPagina
+        printf "\e[91mINTRODUCE UN NÚMERO SUPERIOR A 0 Y DIVISOR DE %s \e[39m\r" $dirTotales
+    done
+    printf "%*s\n" "$(tput cols)" " "
 
     #? Prioridades
     #printf "\e[1A%80s\r" " "
@@ -31,22 +149,7 @@ function pedirDatos() {
         invertido=1
     fi
 
-    #? Direcciones de memoria
-    until [[ $dirTotales > 0 ]]; do
-        printf "\e[1A%80s\r" " " #imprimir 80 espacios en color 1A
-        read -p " Número de direcciones totales de la memoria: " dirTotales
-        printf "\e[91mINTRODUCE UN NÚMERO SUPERIOR A 0\e[39m\r"
-    done
-    printf "%*s\n" "$(tput cols)" " "
-
-    until [[ $dirPagina -gt 0 ]] && [[ $(($dirTotales % $dirPagina)) = 0 ]]; do
-        printf "\e[1A%80s\r" " " #imprimir 80 espacios en color 1A
-        read -p " Número de direcciones por pagina: " dirPagina
-        printf "\e[91mINTRODUCE UN NÚMERO SUPERIOR A 0 Y DIVISOR DE %s \e[39m\r" $dirTotales
-    done
-    printf "%*s\n" "$(tput cols)" " "
-
-    ((numMarcos = $dirTotales / $dirPagina))
+    
 
 }
 
@@ -68,13 +171,13 @@ function pedirProcesos() {
         printf " Proceso [%s]\n" $([[ $nProceso < 10 ]] && echo "0$nProceso" || echo $nProceso)
         echo
 
-        until [[ ${procPrioridad[nProceso]} -ge $priMenor ]] && [[ ${procPrioridad[$nProceso]} -le $priMayor ]] && [[ -n "${procPrioridad[$nProceso]}" ]]; do
-            printf "\e[1A%80s\r" " "
-            read -p " Prioridad: " procPrioridad[$nProceso]
-            printf "\e[91mINTRODUCE UN NÚMERO ENTRE %s Y %s \e[39m\r" $priMenor $priMayor
+         until [[ ${procLlegada[$nProceso]} -ge 0 ]] && [[ -n "${procLlegada[$nProceso]}" ]]; do
+            printf "\e[1A%0s\r" " "
+            read -p " Tiempo de llegada: " procLlegada[$nProceso]
+            printf "\e[91mINTRODUCE UN NÚMERO MAYOR O IGUAL QUE 0 \e[39m\r"
         done
         printf "%*s\n" "$(tput cols)" " "
-
+        
         until [[ ${procTamano[$nProceso]} -le $numMarcos ]] && [[ ${procTamano[$nProceso]} -gt 0 ]]; do
             printf "\e[1A%80s\r" " "
             read -p " Numero de marcos: " procTamano[$nProceso]
@@ -82,12 +185,15 @@ function pedirProcesos() {
         done
         printf "%*s\n" "$(tput cols)" " "
 
-        until [[ ${procLlegada[$nProceso]} -ge 0 ]] && [[ -n "${procLlegada[$nProceso]}" ]]; do
-            printf "\e[1A%0s\r" " "
-            read -p " Tiempo de llegada: " procLlegada[$nProceso]
-            printf "\e[91mINTRODUCE UN NÚMERO MAYOR O IGUAL QUE 0 \e[39m\r"
+        until [[ ${procPrioridad[nProceso]} -ge $priMenor ]] && [[ ${procPrioridad[$nProceso]} -le $priMayor ]] && [[ -n "${procPrioridad[$nProceso]}" ]]; do
+            printf "\e[1A%80s\r" " "
+            read -p " Prioridad: " procPrioridad[$nProceso]
+            printf "\e[91mINTRODUCE UN NÚMERO ENTRE %s Y %s \e[39m\r" $priMenor $priMayor
         done
         printf "%*s\n" "$(tput cols)" " "
+
+
+       
 
         # TODO: comprobacion por regex
         until [[ -n "${procDirecciones[$nProceso]}" ]]; do
@@ -213,6 +319,7 @@ function inicializarMemoria() {
     for ((i = 0; i < $numMarcos; i++)); do
         memPrincipal[$i]=-1
         memPagina[$i]=-1
+        fallosProceso[$i]=0
     done
 
 }
@@ -537,7 +644,7 @@ function introducirPaginaVacios() {
         local -a paginas
 
         #se obtienen las paginas
-        echo "Se va a introducir una pagina al proceso $1"
+
         IFS=', ' read -r -a paginas <<<"${paginasRestantes[$1]}"
 
         if [[ -z inicio ]]; then
@@ -596,9 +703,10 @@ function paso() {
     #TODO: se ppuedo meter en un modulo
     local -i gtPri elegido
 
+    
+
     for p in ${!procesosMemoria[@]}; do
-        echo "Comprobando proceso $p"
-        if [[ $prioridad = "m" ]]; then
+        if [[ $prioridad -eq "m" ]]; then
             if [[ $invertido -eq 1 ]]; then
                 echo "PRI m INVERTIDO"
                 # a mas numero mas prioridad
@@ -611,10 +719,8 @@ function paso() {
                 echo "PRI m NO INVERTIDO"
                 # a menos numero mas prioridad
                 if [[ ${procPrioridad[$p]} -lt $gtPri ]] || [[ -z "$gtPri" ]]; then
-                    echo "##############"
                     gtPri=${procPrioridad[$p]}
                     elegido=$p
-                    echo "Proceso $elegido"
                 fi
             fi
 
@@ -624,7 +730,7 @@ function paso() {
                 # a menos numero mas prioridad
                 echo "PRI M INVERTIDO"
                 if [[ ${procPrioridad[$p]} -lt $gtPri ]] || [[ -z "$gtPri" ]]; then
-                    echo "##############"
+
                     gtPri=${procPrioridad[$p]}
                     elegido=$p
                 fi
@@ -632,7 +738,7 @@ function paso() {
                 # a mas numero mas prioridad
                 echo "PRI M NO INVERTIDO"
                 if [[ ${procPrioridad[$p]} -gt $gtPri ]] || [[ -z "$gtPri" ]]; then
-                    echo "##############"
+
                     gtPri=${procPrioridad[$p]}
                     elegido=$p
                 fi
@@ -650,15 +756,14 @@ function paso() {
     done
 
     if [[ -n $elegido ]]; then
-        echo "Se va a introducir una pagina en el proceso $elegido"
         introducirPagina $elegido
         #? se modifica el estado a ejecutandose
         procEstado[$elegido]=3
     fi
 
-    clear
-    header 0 0
-    header 1 0
+    #clear
+    header 0 1
+    header 1 1
     echo
     salidaEjecucion
 
@@ -686,8 +791,8 @@ function header() {
 
     if [[ $modo -eq 0 ]]; then
         linea=
-        linea=" ${underline}${bold}PRIORIDAD MAYOR/MENOR NO EXPULSOR, OPTIMO, CONTINUA Y NO REUBICABLE"
-        pantalla "$linea"
+        linea=" ${underline}${bold}PRIORIDAD MAYOR/MENOR NO EXPULSOR, OPTIMO, CONTINUA Y NO REUBICABLE${normal}"
+        printf "$linea\n"
     else
         [[ $invertido -eq 0 ]] && min=$priMenor || min=$priMayor
         [[ $invertido -eq 0 ]] && max=$priMayor || max=$priMenor
@@ -695,15 +800,15 @@ function header() {
         linea+=$(printf " T:%2d    Número de Procesos:%d   Prioridad:%s    Valor Menor:%d  Valor Mayor:%d" \
             "$tiempo" "${#procTamano[@]}" "$prioridad" "$min" "$max")
 
-        pantalla "$linea"
-        log 3 "$(printf "\e[38;5;17m#\e[39m%42sINSTANTE: %3d%43s\e[38;5;17m#\e[39m" " " "$tiempo" " ")" "$(printf "#%42sINSTANTE: %3d%43s#" " " "$tiempo" " ")"
+        printf "$linea\n"
+
     fi
 }
 
 #######################################
 #	Escribe en pantalla
 #	Globales:
-#		modo_silencio
+#		silencio
 #	Argumentos:
 #		Mensaje con escapes
 #	Devuelve:
@@ -711,7 +816,7 @@ function header() {
 #######################################
 function pantalla() {
     local -r mensaje=$1
-    if [[ -z $modo_silencio ]]; then
+    if [[ -z $silencio ]]; then
         echo -e "${NC}$mensaje${NC}"
     fi
 }
@@ -909,7 +1014,6 @@ function imprimirBanda() {
     local -i ini=$1 max=$2 marco=$3
     local anterior
 
-
     if [[ $max -ge ${#bandaTiempoProceso[@]} ]]; then
         max=$((${#bandaTiempoProceso[@]}))
     fi
@@ -942,7 +1046,7 @@ function imprimirBanda() {
         printf " ${bold}${underline}BM${nounderline}║"
     else
         printf "%4s" " "
-    fi 
+    fi
 
     until [[ $ini -eq $max ]]; do
         if [[ ${bandaTiempoProceso[$ini]} -eq -1 ]]; then
@@ -1036,6 +1140,7 @@ function resumenFinal() {
     for ((p = 0; p < ${#procLlegada[@]}; p++)); do
         let mEsp+=$((tiempoEntrada[$p] - procLlegada[$p]))
         let mResp+=$((tiempoSalida[$p] - procLlegada[$p]))
+
         let mFail+=${fallosProceso[$p]}
     done
 
@@ -1065,6 +1170,7 @@ function valoresIniciales() {
 
 declare -i finalizado priMayor priMenor invertido=0 #? si se ha invertido la prioridad mayor/menor
 declare prioridad                                   #? m o M
+declare archivo
 
 declare -i dirTotales procesosTotales procesosRestantes
 declare -i dirPagina #? Numero de procesos por pagina
@@ -1115,24 +1221,33 @@ declare -a proc_color_secuencia=("1;31" "32" "1;33" "34" "35" "36" "1;35" "37")
 declare -a fondos=("1;41" "42" "1;43" "44" "45" "46" "1;45" "40")
 
 #! relativo a eventos
-declare -i mostar=1      #? si queremos que se muestre un paso de la ejecucion
-declare -i ninguno debug #? si queremos que no se muestre ningun paso o que se muestren todos
-
+declare -i mostar=1              #? si queremos que se muestre un paso de la ejecucion
+declare -i ninguno=0 debug=0     #? si queremos que no se muestre ningun paso o que se muestren todos
+declare -i silencio=0 mArchivo=0 #? si estamos en modo silencio o modo archivos
 #####!####### EJECUCION PRINCIPAL #####!#######
 
-# Recogida de datos
-clear
-header 0 1
-#pedirDatos
+leerArgumentos $@
 
-clear
-header 0 1
-header 1 1
-#pedirProcesos
-
-valoresIniciales
-# clear
-# Se pasan los espacios de memoria no ocupados a -1
+if [[ archivo -eq 0 ]]; then
+    # Recogida de datos
+    clear
+    header 0 1
+    pedirDatos
+    #? calculo del numero de marcos en la memoria
+    ((numMarcos = $dirTotales / $dirPagina))
+    clear
+    header 0 1
+    header 1 1
+    pedirProcesos
+else
+    ((numMarcos = $dirTotales / $dirPagina))
+    if [[ $priMenor -gt $priMayor ]]; then
+        a=$priMenor
+        priMenor=$priMayor
+        priMayor=$a
+        invertido=1
+    fi
+fi
 
 # Ordenar segun orden de llegada
 ordenarLlegada
