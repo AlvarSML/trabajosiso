@@ -108,7 +108,9 @@ function mostrarAyuda() {
 #
 #############################
 function pedirDatos() {
-
+    clear
+    header 0 1
+    echo
     #? Direcciones de memoria
     until [[ $dirTotales > 0 ]]; do
         printf "\e[1A%80s\r" " " #imprimir 80 espacios en color 1A
@@ -125,7 +127,7 @@ function pedirDatos() {
     printf "%*s\n" "$(tput cols)" " "
 
     #? Prioridades
-    #printf "\e[1A%80s\r" " "
+    printf "\e[1A%80s\r" " "
     read -p " Prioridad menor:" priMenor
     printf "\n"
 
@@ -149,8 +151,6 @@ function pedirDatos() {
         invertido=1
     fi
 
-    
-
 }
 
 #############################
@@ -160,10 +160,11 @@ function pedirDatos() {
 function pedirProcesos() {
     local continuar='s' nProceso=0
 
-    until [[ $continuar == 'n' ]]; do
+    until [[ $continuar == 'n' ]] || [[ $continuar == 'N' ]]; do
         clear
-        header 0 0
-
+        header 0 1
+        header 1 1
+        
         if [[ nProceso -ne 0 ]]; then
             salidaProceso
         fi
@@ -171,13 +172,13 @@ function pedirProcesos() {
         printf " Proceso [%s]\n" $([[ $nProceso < 10 ]] && echo "0$nProceso" || echo $nProceso)
         echo
 
-         until [[ ${procLlegada[$nProceso]} -ge 0 ]] && [[ -n "${procLlegada[$nProceso]}" ]]; do
+        until [[ ${procLlegada[$nProceso]} -ge 0 ]] && [[ -n "${procLlegada[$nProceso]}" ]]; do
             printf "\e[1A%0s\r" " "
             read -p " Tiempo de llegada: " procLlegada[$nProceso]
             printf "\e[91mINTRODUCE UN NÚMERO MAYOR O IGUAL QUE 0 \e[39m\r"
         done
         printf "%*s\n" "$(tput cols)" " "
-        
+
         until [[ ${procTamano[$nProceso]} -le $numMarcos ]] && [[ ${procTamano[$nProceso]} -gt 0 ]]; do
             printf "\e[1A%80s\r" " "
             read -p " Numero de marcos: " procTamano[$nProceso]
@@ -192,9 +193,6 @@ function pedirProcesos() {
         done
         printf "%*s\n" "$(tput cols)" " "
 
-
-       
-
         # TODO: comprobacion por regex
         until [[ -n "${procDirecciones[$nProceso]}" ]]; do
             printf "\e[1A%80s\r" " "
@@ -208,6 +206,7 @@ function pedirProcesos() {
         ((nProceso++))
 
         read -p " Introducir otro proceso s/n [s]: " -n1 continuar
+        read -p " $continuar "
         echo
 
     done
@@ -233,7 +232,7 @@ function ordenarLlegada() {
                 ordenLlegada[((p + 1))]=$pl
                 p=-1
             elif [[ $p -eq 0 ]]; then
-                tiempos[((p + 1))]=${tiempos[$p]}ñ
+                tiempos[((p + 1))]=${tiempos[$p]}
                 ordenLlegada[((p + 1))]=${ordenLlegada[$p]}
 
                 tiempos[$p]=${procLlegada[$pl]}
@@ -374,6 +373,9 @@ function reservarMemoria() {
         done
         tiempoEntrada[$1]=$tiempo
 
+        mostrar=1
+        cadenaEventos="${cadenaEventos} ${normal}\e[${procColor[$p]}mt(${tiempo})Proceso[${1}]>A memoria${NC}"
+
     fi
 }
 
@@ -401,6 +403,10 @@ function liberarMemoria() {
             #? se modifica el estado
 
         fi
+
+        mostrar=1
+        procEstado[$p]=4
+        cadenaEventos="${cadenaEventos} ${normal}\e[${procColor[$p]}mt(${tiempo})Proceso[${1}]>Terminado${NC}"
     fi
 }
 
@@ -688,6 +694,8 @@ function paso() {
             introducirPrioridad $proceso
             # se modifica el estado
             procEstado[$proceso]=1
+            mostrar=1
+            cadenaEventos="${cadenaEventos} ${normal}\e[${procColor[$p]}mt(${tiempo})Proceso{${proceso}}>Llega${NC}"
         fi
     done
 
@@ -703,12 +711,9 @@ function paso() {
     #TODO: se ppuedo meter en un modulo
     local -i gtPri elegido
 
-    
-
     for p in ${!procesosMemoria[@]}; do
         if [[ $prioridad -eq "m" ]]; then
             if [[ $invertido -eq 1 ]]; then
-                echo "PRI m INVERTIDO"
                 # a mas numero mas prioridad
                 if [[ ${procPrioridad[$p]} -gt $gtPri ]] || [[ -z "$gtPri" ]]; then
                     gtPri=${procPrioridad[$p]}
@@ -716,7 +721,6 @@ function paso() {
 
                 fi
             else
-                echo "PRI m NO INVERTIDO"
                 # a menos numero mas prioridad
                 if [[ ${procPrioridad[$p]} -lt $gtPri ]] || [[ -z "$gtPri" ]]; then
                     gtPri=${procPrioridad[$p]}
@@ -728,7 +732,6 @@ function paso() {
 
             if [[ $invertido -eq 1 ]]; then
                 # a menos numero mas prioridad
-                echo "PRI M INVERTIDO"
                 if [[ ${procPrioridad[$p]} -lt $gtPri ]] || [[ -z "$gtPri" ]]; then
 
                     gtPri=${procPrioridad[$p]}
@@ -736,7 +739,6 @@ function paso() {
                 fi
             else
                 # a mas numero mas prioridad
-                echo "PRI M NO INVERTIDO"
                 if [[ ${procPrioridad[$p]} -gt $gtPri ]] || [[ -z "$gtPri" ]]; then
 
                     gtPri=${procPrioridad[$p]}
@@ -761,13 +763,17 @@ function paso() {
         procEstado[$elegido]=3
     fi
 
-    #clear
-    header 0 1
-    header 1 1
-    echo
-    salidaEjecucion
+    if [[ $mostrar -eq 1 ]] || [[ $debug -eq 1 ]] && [[ $silencio -eq 0 ]]; then
+        clear
+        header 0 1
+        header 1 1
+        echo
+        salidaEjecucion
+        read -p "Pulsa [Intro] para continuar"
+    fi
 
-    read -p "Pulsa [Intro] para continuar"
+    mostrar=0
+
 }
 
 ############! FUNCIONES DE SALIDA POR PANTALLA !############
@@ -923,7 +929,7 @@ function salidaEjecucion() {
             tEsp="---"
         fi
 
-        printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
+        printf "\033[${procColor[$p]}m${formatoFilas}" \
             "" "$p" "${procLlegada[$p]}" "$tEjec" "${procTamano[$p]}" "${procPrioridad[$p]}" "$tEsp" "$tRet" "$tResp" "$estado" "${paginasRestantes[$p]}"
     done
     printf "${NC}"
@@ -938,7 +944,7 @@ function salidaEjecucion() {
 
     for p in ${!procesosMemoria[@]}; do
         espacios=$((${procTamano[$p]} * $marco))
-        color=${proc_color_secuencia[$p]}
+        color=${procColor[$p]}
         printf "\e[${color}m%03d%${espacios}s${NC}" $p " "
     done
     printf "\n"
@@ -973,7 +979,7 @@ function salidaEjecucion() {
     for p in ${memPrincipal[@]}; do
         if [[ $p -ne $anterior ]] || [[ -z $anterior ]] || [[ $posicion -eq $final ]]; then
             espacios=$(($marco - 2))
-            color=${proc_color_secuencia[$p]}
+            color=${procColor[$p]}
             printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $posicion
         else
             espacios=$(($marco + 1))
@@ -988,10 +994,12 @@ function salidaEjecucion() {
     #! para permitir que sea multilinea
     local -i ancho=10
 
-    declare -p bandaTiempoProceso
     for ((i = 0; i < ${#bandaTiempoProceso[@]}; i = i + ancho)); do
         imprimirBanda $i $((i + ancho)) $marco
     done
+
+    #! historial
+    echo -e "$cadenaEventos"
 
 }
 
@@ -1028,7 +1036,7 @@ function imprimirBanda() {
     until [[ $ini -eq $max ]]; do
         if [[ ${bandaTiempoProceso[$ini]} -ne $anterior ]] || [[ -z $anterior ]]; then
             espacios=$(($marco - 2))
-            color=${proc_color_secuencia[${bandaTiempoProceso[$ini]}]}
+            color=${procColor[${bandaTiempoProceso[$ini]}]}
             printf "\e[${color}m%${espacios}s%03d${NC}" " " ${bandaTiempoProceso[$ini]}
         else
             espacios=$(($marco + 1))
@@ -1066,11 +1074,11 @@ function imprimirBanda() {
     until [[ $ini -eq $max ]]; do
         if [[ ${bandaTiempoProceso[$ini]} -ne $anterior ]] || [[ -z $anterior ]]; then
             espacios=$(($marco - 2))
-            color=${proc_color_secuencia[${bandaTiempoProceso[$ini]}]}
+            color=${procColor[${bandaTiempoProceso[$ini]}]}
             printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $ini
         elif [[ $ini -eq $((max - 1)) ]]; then
             espacios=0
-            color=${proc_color_secuencia[${bandaTiempoProceso[$ini]}]}
+            color=${procColor[${bandaTiempoProceso[$ini]}]}
             printf "\e[${color}m%${espacios}s%-${marco}s${NC}" " " $ini
         else
             espacios=$(($marco + 1))
@@ -1105,7 +1113,7 @@ function salidaProceso() {
 
     for p in ${ordenLlegada[@]}; do
         ejecucion=$(calcularEjec $p)
-        printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}${NC}\n" \
+        printf "\033[${procColor[$p]}m${formatoFilas}${NC}\n" \
             "$p" "${procLlegada[$p]}" "$ejecucion" "${procTamano[$p]}" "${procPrioridad[$p]}" "${procDirecciones[$p]}"
     done
 }
@@ -1129,7 +1137,7 @@ function resumenFinal() {
         tResp=$((tiempoSalida[$p] - procLlegada[$p]))
         #? tiempo de espera
         tEsp=$((tiempoEntrada[$p] - procLlegada[$p]))
-        printf "\033[${proc_color_secuencia[$p]}m${formatoFilas}" \
+        printf "\033[${procColor[$p]}m${formatoFilas}" \
             "$p" "${procLlegada[$p]}" "${tiempoSalida[$p]}" "$tEsp" "$tResp" "${fallosProceso[$p]}"
         printf "\n"
     done
@@ -1144,9 +1152,9 @@ function resumenFinal() {
         let mFail+=${fallosProceso[$p]}
     done
 
-    printf "Tiempo de espera medio: %s \n" $(bc <<<"scale=4; $mEsp/${#procLlegada[@]}")
-    printf "Tiempo de respuesta medio: %s\n" $(bc <<<"scale=4; $mResp/${#procLlegada[@]}")
-    printf "Numero de fallos medio: %s\n" $(bc <<<"scale=4; $mFail/${#procLlegada[@]}")
+    printf " Tiempo de espera medio: %s \n" $(bc <<<"scale=2; $mEsp/${#procLlegada[@]}")
+    printf " Tiempo de respuesta medio: %s\n" $(bc <<<"scale=2; $mResp/${#procLlegada[@]}")
+    printf " Numero de fallos medio: %s\n" $(bc <<<"scale=2; $mFail/${#procLlegada[@]}")
 }
 
 ############ DEBUG ############
@@ -1217,27 +1225,24 @@ declare Rojo='\033[0;31m' Negro='\033[0;30m' NC='\033[0m'
 
 #! otros estilos
 declare underline=$(tput smul) nounderline=$(tput rmul) bold=$(tput bold) normal=$(tput sgr0)
-declare -a proc_color_secuencia=("1;31" "32" "1;33" "34" "35" "36" "1;35" "37")
+declare -a procColor=("1;31" "32" "1;33" "34" "35" "36" "1;35" "37")
 declare -a fondos=("1;41" "42" "1;43" "44" "45" "46" "1;45" "40")
 
 #! relativo a eventos
-declare -i mostar=1              #? si queremos que se muestre un paso de la ejecucion
+declare -i mostrar=1             #? si queremos que se muestre un paso de la ejecucion
 declare -i ninguno=0 debug=0     #? si queremos que no se muestre ningun paso o que se muestren todos
 declare -i silencio=0 mArchivo=0 #? si estamos en modo silencio o modo archivos
 #####!####### EJECUCION PRINCIPAL #####!#######
 
 leerArgumentos $@
 
-if [[ archivo -eq 0 ]]; then
+if [[ $mArchivo -eq 0 ]]; then
     # Recogida de datos
-    clear
-    header 0 1
+
     pedirDatos
     #? calculo del numero de marcos en la memoria
     ((numMarcos = $dirTotales / $dirPagina))
-    clear
-    header 0 1
-    header 1 1
+
     pedirProcesos
 else
     ((numMarcos = $dirTotales / $dirPagina))
@@ -1269,10 +1274,12 @@ until [[ $procesosRestantes -eq 0 ]] || [[ $tiempo -gt 1000 ]]; do
 done
 
 #TODO: Resumen final
-#clear
+
+clear
 header 0 1
 header 1 1
 resumenFinal
+exit 0
 
 # echo "${procPrioridad[@]}"
 # echo "${procTamano[@]}"
